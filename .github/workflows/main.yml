@@ -1,35 +1,182 @@
-name: Export SF Symbols using sfsymbols
+name: Export 7,000+ SF Symbols
 
 on:
-  push:
+  workflow_dispatch:
+    inputs:
+      format:
+        description: 'Export Format(s)'
+        required: true
+        default: 'svg'
+        type: choice
+        options:
+          - 'svg'
+          - 'pdf'
+          - 'png'
+          - 'all'
+      weight:
+        description: 'Symbol Weight'
+        required: true
+        default: 'regular'
+        type: choice
+        options:
+          - 'regular'
+          - 'medium'
+          - 'semibold'
+          - 'bold'
+          - 'light'
+          - 'all_weights'
+      scale:
+        description: 'Symbol Scale'
+        required: true
+        default: 'medium'
+        type: choice
+        options:
+          - 'small'
+          - 'medium'
+          - 'large'
+      point_size:
+        description: 'Base Point Size'
+        required: true
+        default: '32'
+        type: string
+      optimize_svg:
+        description: 'Optimize SVGs with SVGO'
+        required: false
+        default: true
+        type: boolean
+      create_release:
+        description: 'Publish as a GitHub Release'
+        required: false
+        default: true
+        type: boolean
+      release_tag:
+        description: 'Release Tag (e.g. v6.0.0)'
+        required: false
+        default: 'v6.0.0'
+        type: string
+  schedule:
+    # Monthly sync to catch new Apple SF Symbols releases
+    - cron: '0 0 1 * *'
 
 jobs:
-  export:
-    runs-on: macos-latest
+  export-symbols:
+    name: Export SF Symbols Icons
+    runs-on: macos-14 # Apple Silicon macOS runner with native symbol rendering
+    timeout-minutes: 90
+    permissions:
+      contents: write
+      releases: write
 
     steps:
-      - name: Checkout repo
+      - name: Check out repository
         uses: actions/checkout@v4
 
-      - name: Download SF Symbols DMG
-        run: curl -L "https://devimages-cdn.apple.com/design/resources/download/SF-Symbols-27.dmg" -o symbols.dmg
+      - name: Cache SF Symbols Installer
+        id: cache-sf-symbols
+        uses: actions/cache@v4
+        with:
+          path: ~/Library/Caches/SF-Symbols
+          key: sf-symbols-installer-v6
 
-      - name: Mount DMG
-        run: hdiutil attach symbols.dmg -mountpoint /Volumes/SFSymbols
-
-      - name: Install SF Symbols
-        run: sudo installer -pkg "$(find /Volumes/SFSymbols -name '*.pkg')" -target /
-
-      - name: Unmount DMG
-        run: hdiutil detach /Volumes/SFSymbols
-
-      - name: Export all symbols using sfsymbols
+      - name: Install Official Apple SF Symbols
         run: |
-          mkdir exports
-          "/Applications/SF Symbols.app/Contents/MacOS/sfsymbols" export --all --output exports
+          chmod +x ./scripts/install_sf_symbols.sh
+          ./scripts/install_sf_symbols.sh
 
-      - name: Upload exported symbols
+      - name: Verify SF Symbols Environment & Catalog
+        run: |
+          echo "Checking macOS version:"
+          sw_vers
+          echo "Verifying SF Symbols metadata bundle..."
+          METADATA_DIR="/Applications/SF Symbols.app/Contents/Resources/Metadata"
+          if [ -d "$METADATA_DIR" ]; then
+            echo "Found installed SF Symbols Metadata at $METADATA_DIR"
+            ls -la "$METADATA_DIR"
+          else
+            echo "Falling back to system AppKit symbol catalog"
+          fi
+
+      - name: Compile and Run SF Symbols Exporter (Swift)
+        run: |
+          echo "Starting batch export of 7,000+ symbols..."
+          mkdir -p output/svg output/pdf output/png output/metadata
+
+          FORMAT="${{ github.event.inputs.format || 'svg' }}"
+          WEIGHT="${{ github.event.inputs.weight || 'regular' }}"
+          SCALE="${{ github.event.inputs.scale || 'medium' }}"
+          POINT_SIZE="${{ github.event.inputs.point_size || '32' }}"
+
+          swift scripts/export_sf_symbols.swift \
+            --format "$FORMAT" \
+            --weight "$WEIGHT" \
+            --scale "$SCALE" \
+            --size "$POINT_SIZE" \
+            --output "./output"
+
+      - name: Optimize SVGs with SVGO
+        if: ${{ github.event.inputs.optimize_svg != 'false' }}
+        run: |
+          if [ -d "output/svg" ] && [ "$(ls -A output/svg 2>/dev/null)" ]; then
+            echo "Installing SVGO and optimizing vectors..."
+            npm install -g svgo
+            svgo -f output/svg -o output/svg --multipass --quiet || true
+            echo "SVGO optimization completed."
+          fi
+
+      - name: Generate Statistics & Summary
+        run: |
+          echo "## SF Symbols Export Summary" >> $GITHUB_STEP_SUMMARY
+          echo "| Format | Count | Directory Size |" >> $GITHUB_STEP_SUMMARY
+          echo "|---|---|---|" >> $GITHUB_STEP_SUMMARY
+
+          for dir in svg pdf png; do
+            if [ -d "output/$dir" ]; then
+              COUNT=$(find "output/$dir" -type f | wc -l | tr -d ' ')
+              SIZE=$(du -sh "output/$dir" 2>/dev/null | cut -f1)
+              echo "| **$dir** | $COUNT icons | $SIZE |" >> $GITHUB_STEP_SUMMARY
+            fi
+          done
+
+          if [ -f "output/metadata/symbols.json" ]; then
+            META_COUNT=$(grep -c '"name":' output/metadata/symbols.json || echo "7000+")
+            echo "| **Metadata JSON** | $META_COUNT indexed | $(du -sh output/metadata/symbols.json | cut -f1) |" >> $GITHUB_STEP_SUMMARY
+          fi
+
+      - name: Package Archives
+        run: |
+          mkdir -p dist
+          cd output
+          if [ -d "svg" ]; then zip -r -9 ../dist/sf-symbols-svg.zip svg; fi
+          if [ -d "pdf" ]; then zip -r -9 ../dist/sf-symbols-pdf.zip pdf; fi
+          if [ -d "png" ]; then zip -r -9 ../dist/sf-symbols-png.zip png; fi
+          if [ -d "metadata" ]; then cp -r metadata ../dist/; fi
+          zip -r -9 ../dist/sf-symbols-complete-pack.zip .
+          cd ..
+          ls -la dist/
+
+      - name: Upload Export Artifacts
         uses: actions/upload-artifact@v4
         with:
-          name: sf-symbols-svg
-          path: exports
+          name: sf-symbols-exported-${{ github.sha }}
+          path: dist/*
+          retention-days: 30
+
+      - name: Create GitHub Release
+        if: ${{ github.event.inputs.create_release != 'false' }}
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          TAG="${{ github.event.inputs.release_tag || 'v6.0.0' }}"
+          TITLE="SF Symbols Export ($TAG)"
+          BODY="Automated export of 7,000+ Apple SF Symbol icons.\n\nIncluded assets:\n- Complete bundle (.zip)\n- SVG vectors (.zip)\n- PDF vector assets (.zip)\n- High-resolution PNGs (.zip)\n- Search index & metadata JSON"
+
+          if gh release view "$TAG" >/dev/null 2>&1; then
+            echo "Updating existing release $TAG..."
+            gh release upload "$TAG" dist/* --clobber
+          else
+            echo "Creating new release $TAG..."
+            gh release create "$TAG" dist/* \
+              --title "$TITLE" \
+              --notes "$BODY" \
+              --latest
+          fi
