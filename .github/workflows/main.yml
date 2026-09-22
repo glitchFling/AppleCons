@@ -5,51 +5,29 @@ on:
 
 jobs:
   extract:
-    runs-on: ubuntu-latest
+    runs-on: macos-latest
 
     steps:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install 7zip
-        run: |
-          sudo apt-get update
-          sudo apt-get install -y p7zip-full
-
       - name: Download SF Symbols DMG
         run: curl -L "https://devimages-cdn.apple.com/design/resources/download/SF-Symbols-27.dmg" -o symbols.dmg
 
-      - name: Extract DMG
+      - name: Mount DMG
         run: |
-          mkdir dmg
-          7z x symbols.dmg -odmg
+          hdiutil attach symbols.dmg -mountpoint /Volumes/SFSymbols
 
-      - name: Extract PKG
+      - name: Copy .app from DMG
         run: |
-          mkdir pkgs
-          PKG=$(find dmg -name "*.pkg" | head -n 1)
-          echo "Found PKG: $PKG"
-          7z x "$PKG" -opkgs
+          mkdir extracted
+          cp -R "/Volumes/SFSymbols/SF Symbols.app" extracted/
 
-      - name: List PKG contents
-        run: |
-          echo "PKG contents:"
-          find pkgs -maxdepth 4
+      - name: Unmount DMG
+        run: hdiutil detach /Volumes/SFSymbols
 
-      - name: Extract Payload~
-        run: |
-          mkdir payload
-          P=$(find pkgs -type f -name "Payload~" | head -n 1)
-          echo "Found Payload~: $P"
-          7z x "$P" -opayload
-
-      - name: List extracted payload
-        run: |
-          echo "Payload contents:"
-          find payload -maxdepth 6
-
-      - name: Upload extracted files
+      - name: Upload extracted app
         uses: actions/upload-artifact@v4
         with:
-          name: sf-symbols-extracted
-          path: payload
+          name: sf-symbols-app
+          path: extracted
