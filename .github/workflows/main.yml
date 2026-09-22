@@ -1,4 +1,4 @@
-name: Extract SF Symbols DMG (correct)
+name: Extract SF Symbols 27
 
 on:
   push:
@@ -24,13 +24,76 @@ jobs:
           mkdir dmg
           7z x symbols.dmg -odmg
 
-      - name: Extract the .app bundle
+      - name: List DMG contents
         run: |
-          mkdir app
-          find dmg -name "*.app" -exec cp -R {} app/ \;
+          echo "DMG contents:"
+          find dmg -maxdepth 4
 
-      - name: Upload extracted app
+      - name: Extract PKG
+        run: |
+          mkdir pkgs
+          PKG=$(find dmg -name "*.pkg" | head -n 1)
+          echo "Found PKG: $PKG"
+          7z x "$PKG" -opkgs
+
+      - name: List PKG contents
+        run: |
+          echo "PKG contents:"
+          find pkgs -maxdepth 4
+
+      - name: Extract real payload (any Apple format)
+        run: |
+          mkdir payload
+
+          # 1. Classic Payload
+          P=$(find pkgs -type f -name "Payload" | head -n 1)
+          if [ -n "$P" ]; then
+            echo "Extracting classic Payload: $P"
+            7z x "$P" -opayload
+            exit 0
+          fi
+
+          # 2. pax.gz payload
+          P=$(find pkgs -type f -name "*.pax.gz" | head -n 1)
+          if [ -n "$P" ]; then
+            echo "Extracting pax.gz Payload: $P"
+            gunzip -c "$P" | cpio -idmv
+            exit 0
+          fi
+
+          # 3. APFS chunked payload (Payload.0000000001 etc)
+          P=$(find pkgs -type f -name "Payload.*" | head -n 1)
+          if [ -n "$P" ]; then
+            echo "Extracting APFS chunked Payload: $P"
+            7z x "$P" -opayload
+            exit 0
+          fi
+
+          # 4. Nested PKG (Apple loves nesting)
+          INNER=$(find pkgs -type f -name "*.pkg" | head -n 1)
+          if [ -n "$INNER" ]; then
+            echo "Found nested PKG: $INNER"
+            mkdir pkgs/nested
+            7z x "$INNER" -opkgs/nested
+
+            P=$(find pkgs/nested -type f -name "Payload" -o -name "*.pax.gz" -o -name "Payload.*" | head -n 1)
+            if [ -n "$P" ]; then
+              echo "Extracting nested payload: $P"
+              7z x "$P" -opayload || gunzip -c "$P" | cpio -idmv
+              exit 0
+            fi
+          fi
+
+          echo "No payload found."
+          exit 1
+
+      - name: List extracted payload
+        run: |
+          echo "Payload contents:"
+          find payload -maxdepth 6
+
+      - name: Upload extracted files
         uses: actions/upload-artifact@v4
         with:
-          name: sf-symbols-app
-          path: app
+          name: sf-symbols-extracted
+          path: payload
