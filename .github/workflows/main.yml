@@ -1,4 +1,4 @@
-name: Extract SF Symbols PKG
+name: Extract SF Symbols PKG (7zip only)
 
 on:
   workflow_dispatch:
@@ -11,31 +11,30 @@ jobs:
       - name: Checkout repo
         uses: actions/checkout@v4
 
-      - name: Install tools
+      - name: Install 7zip
         run: |
           sudo apt-get update
-          sudo apt-get install -y p7zip-full xar cpio
+          sudo apt-get install -y p7zip-full
 
       - name: Download SF Symbols DMG
         run: curl -L "https://devimages-cdn.apple.com/design/resources/download/SF-Symbols-27.dmg" -o symbols.dmg
 
-      - name: Extract DMG with 7zip
+      - name: Extract DMG
         run: |
           mkdir dmg
           7z x symbols.dmg -odmg
 
-      - name: Find and extract PKG
+      - name: Extract PKG
         run: |
           PKG=$(find dmg -name "*.pkg" | head -n 1)
           echo "Found PKG: $PKG"
           mkdir pkg
-          xar -xf "$PKG" -C pkg
+          7z x "$PKG" -opkg
 
       - name: Extract Payload
         run: |
           mkdir payload
-          cd payload
-          cat ../pkg/Payload | cpio -idmv
+          7z x pkg/Payload -opayload
 
       - name: Upload extracted files
         uses: actions/upload-artifact@v4
