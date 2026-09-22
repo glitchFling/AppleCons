@@ -1,7 +1,7 @@
-name: Extract SF Symbols PKG (7zip only)
+name: Extract SF Symbols PKG (auto)
 
 on:
-  workflow_dispatch:
+  push:
 
 jobs:
   extract:
@@ -24,17 +24,22 @@ jobs:
           mkdir dmg
           7z x symbols.dmg -odmg
 
-      - name: Extract PKG
+      - name: Extract ALL PKGs recursively
         run: |
-          PKG=$(find dmg -name "*.pkg" | head -n 1)
-          echo "Found PKG: $PKG"
-          mkdir pkg
-          7z x "$PKG" -opkg
+          mkdir pkgs
+          find dmg -name "*.pkg" | while read PKG; do
+            echo "Extracting $PKG"
+            OUT="pkgs/$(basename "$PKG")"
+            mkdir "$OUT"
+            7z x "$PKG" -o"$OUT"
+          done
 
-      - name: Extract Payload
+      - name: Find real Payload
         run: |
           mkdir payload
-          7z x pkg/Payload -opayload
+          REAL_PAYLOAD=$(find pkgs -name "Payload" | head -n 1)
+          echo "Found Payload: $REAL_PAYLOAD"
+          7z x "$REAL_PAYLOAD" -opayload
 
       - name: Upload extracted files
         uses: actions/upload-artifact@v4
