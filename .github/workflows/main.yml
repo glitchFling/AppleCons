@@ -1,10 +1,10 @@
-name: Extract SF Symbols 27
+name: Export SF Symbols using sfsymbols
 
 on:
   push:
 
 jobs:
-  extract:
+  export:
     runs-on: macos-latest
 
     steps:
@@ -20,16 +20,16 @@ jobs:
       - name: Install SF Symbols
         run: sudo installer -pkg "$(find /Volumes/SFSymbols -name '*.pkg')" -target /
 
-      - name: Copy installed app
-        run: |
-          mkdir extracted
-          cp -R "/Applications/SF Symbols.app" extracted/
-
       - name: Unmount DMG
         run: hdiutil detach /Volumes/SFSymbols
 
-      - name: Upload extracted app
+      - name: Export all symbols using sfsymbols
+        run: |
+          mkdir exports
+          "/Applications/SF Symbols.app/Contents/MacOS/sfsymbols" export --all --output exports
+
+      - name: Upload exported symbols
         uses: actions/upload-artifact@v4
         with:
-          name: sf-symbols-app
-          path: extracted
+          name: sf-symbols-svg
+          path: exports
