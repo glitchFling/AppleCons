@@ -1,0 +1,43 @@
+name: Extract SF Symbols DMG
+
+on:
+  workflow_dispatch:
+
+jobs:
+  extract:
+    runs-on: ubuntu-latest
+
+    steps:
+      - name: Checkout repo
+        uses: actions/checkout@v4
+
+      - name: Download SF Symbols DMG
+        run: |
+          curl -L "https://devimages-cdn.apple.com/design/resources/download/SF-Symbols-27.dmg" -o symbols.dmg
+
+      - name: Install dmg2img and hfsprogs
+        run: |
+          sudo apt-get update
+          sudo apt-get install -y dmg2img hfsprogs
+
+      - name: Convert DMG to IMG
+        run: dmg2img symbols.dmg symbols.img
+
+      - name: Mount IMG
+        run: |
+          sudo mkdir -p /mnt/sf
+          sudo mount -o loop symbols.img /mnt/sf
+
+      - name: Copy extracted contents
+        run: |
+          mkdir extracted
+          cp -R /mnt/sf/* extracted/
+
+      - name: Unmount
+        run: sudo umount /mnt/sf
+
+      - name: Upload extracted files
+        uses: actions/upload-artifact@v4
+        with:
+          name: sf-symbols-extracted
+          path: extracted
