@@ -17,51 +17,19 @@ jobs:
       - name: Mount DMG
         run: hdiutil attach symbols.dmg -mountpoint /Volumes/SFSymbols
 
-      - name: List DMG contents
-        run: ls -R /Volumes/SFSymbols
+      - name: Install SF Symbols
+        run: sudo installer -pkg "$(find /Volumes/SFSymbols -name '*.pkg')" -target /
 
-      - name: Find PKG
+      - name: Copy installed app
         run: |
-          PKG=$(find /Volumes/SFSymbols -name "*.pkg" | head -n 1)
-          echo "$PKG" > pkgpath.txt
-
-      - name: Expand PKG fully
-        run: |
-          PKG=$(cat pkgpath.txt)
           mkdir extracted
-          pkgutil --expand-full "$PKG" extracted/pkg
-
-      - name: Extract Payload (any format)
-        run: |
-          mkdir extracted/app
-          cd extracted/app
-
-          # Try classic Payload
-          if [ -f "../pkg/Payload" ]; then
-            cat ../pkg/Payload | cpio -idmv
-          fi
-
-          # Try Payload~
-          if [ -f "../pkg/Payload~" ]; then
-            cat ../pkg/Payload~ | cpio -idmv
-          fi
-
-          # Try APFS chunk
-          CHUNK=$(find ../pkg -name "Payload.*" | head -n 1)
-          if [ -n "$CHUNK" ]; then
-            cat "$CHUNK" | cpio -idmv
-          fi
+          cp -R "/Applications/SF Symbols.app" extracted/
 
       - name: Unmount DMG
         run: hdiutil detach /Volumes/SFSymbols
-
-      - name: List extracted app
-        run: |
-          echo "Extracted app contents:"
-          find extracted/app -maxdepth 6
 
       - name: Upload extracted app
         uses: actions/upload-artifact@v4
         with:
           name: sf-symbols-app
-          path: extracted/app
+          path: extracted
