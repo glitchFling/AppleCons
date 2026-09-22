@@ -23,23 +23,42 @@ jobs:
       - name: Find PKG
         run: |
           PKG=$(find /Volumes/SFSymbols -name "*.pkg" | head -n 1)
-          echo "Found PKG: $PKG"
           echo "$PKG" > pkgpath.txt
 
-      - name: Extract PKG
+      - name: Expand PKG fully
         run: |
           PKG=$(cat pkgpath.txt)
           mkdir extracted
-          pkgutil --expand "$PKG" extracted/pkg
+          pkgutil --expand-full "$PKG" extracted/pkg
 
-      - name: Extract Payload
+      - name: Extract Payload (any format)
         run: |
           mkdir extracted/app
           cd extracted/app
-          cat ../pkg/Payload | cpio -idmv
+
+          # Try classic Payload
+          if [ -f "../pkg/Payload" ]; then
+            cat ../pkg/Payload | cpio -idmv
+          fi
+
+          # Try Payload~
+          if [ -f "../pkg/Payload~" ]; then
+            cat ../pkg/Payload~ | cpio -idmv
+          fi
+
+          # Try APFS chunk
+          CHUNK=$(find ../pkg -name "Payload.*" | head -n 1)
+          if [ -n "$CHUNK" ]; then
+            cat "$CHUNK" | cpio -idmv
+          fi
 
       - name: Unmount DMG
         run: hdiutil detach /Volumes/SFSymbols
+
+      - name: List extracted app
+        run: |
+          echo "Extracted app contents:"
+          find extracted/app -maxdepth 6
 
       - name: Upload extracted app
         uses: actions/upload-artifact@v4
