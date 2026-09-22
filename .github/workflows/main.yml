@@ -15,13 +15,28 @@ jobs:
         run: curl -L "https://devimages-cdn.apple.com/design/resources/download/SF-Symbols-27.dmg" -o symbols.dmg
 
       - name: Mount DMG
-        run: |
-          hdiutil attach symbols.dmg -mountpoint /Volumes/SFSymbols
+        run: hdiutil attach symbols.dmg -mountpoint /Volumes/SFSymbols
 
-      - name: Copy .app from DMG
+      - name: List DMG contents
+        run: ls -R /Volumes/SFSymbols
+
+      - name: Find PKG
         run: |
+          PKG=$(find /Volumes/SFSymbols -name "*.pkg" | head -n 1)
+          echo "Found PKG: $PKG"
+          echo "$PKG" > pkgpath.txt
+
+      - name: Extract PKG
+        run: |
+          PKG=$(cat pkgpath.txt)
           mkdir extracted
-          cp -R "/Volumes/SFSymbols/SF Symbols.app" extracted/
+          pkgutil --expand "$PKG" extracted/pkg
+
+      - name: Extract Payload
+        run: |
+          mkdir extracted/app
+          cd extracted/app
+          cat ../pkg/Payload | cpio -idmv
 
       - name: Unmount DMG
         run: hdiutil detach /Volumes/SFSymbols
@@ -30,4 +45,4 @@ jobs:
         uses: actions/upload-artifact@v4
         with:
           name: sf-symbols-app
-          path: extracted
+          path: extracted/app
