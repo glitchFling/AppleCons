@@ -1,4 +1,4 @@
-name: Extract SF Symbols PKG (auto)
+name: Extract SF Symbols DMG (correct)
 
 on:
   push:
@@ -24,25 +24,13 @@ jobs:
           mkdir dmg
           7z x symbols.dmg -odmg
 
-      - name: Extract ALL PKGs recursively
+      - name: Extract the .app bundle
         run: |
-          mkdir pkgs
-          find dmg -name "*.pkg" | while read PKG; do
-            echo "Extracting $PKG"
-            OUT="pkgs/$(basename "$PKG")"
-            mkdir "$OUT"
-            7z x "$PKG" -o"$OUT"
-          done
+          mkdir app
+          find dmg -name "*.app" -exec cp -R {} app/ \;
 
-      - name: Find real Payload
-        run: |
-          mkdir payload
-          REAL_PAYLOAD=$(find pkgs -name "Payload" | head -n 1)
-          echo "Found Payload: $REAL_PAYLOAD"
-          7z x "$REAL_PAYLOAD" -opayload
-
-      - name: Upload extracted files
+      - name: Upload extracted app
         uses: actions/upload-artifact@v4
         with:
-          name: sf-symbols-extracted
-          path: payload
+          name: sf-symbols-app
+          path: app
